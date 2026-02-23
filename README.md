@@ -1,4 +1,4 @@
-# RunAI on Brev
+# RunAI on [NVIDIA Brev](https://brev.nvidia.com/)
 
 `setup_prereqs.sh` runs automatically when your instance is created. It installs Helm, Ingress, Prometheus, Knative, TLS certs, and CoreDNS.
 
