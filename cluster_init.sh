@@ -1,2 +1,2 @@
 #!/bin/bash
-~/runai_brev_launchable/setup_prereqs.sh
+~/runai-brev-launchable/setup_prereqs.sh
