@@ -52,9 +52,14 @@ kubectl rollout restart statefulset -n runai-backend 2>/dev/null || true
 # --- Ensure host can resolve the domain ---
 grep -q "${RUNAI_DOMAIN}" /etc/hosts 2>/dev/null || echo "127.0.0.1 ${RUNAI_DOMAIN}" | sudo tee -a /etc/hosts >/dev/null
 
-# --- Auth token ---
-log "Waiting for control plane to be ready..."
-sleep 15
+# --- Wait for control plane to roll out ---
+# Keycloak comes up first, so a token-based readiness check is misleading.
+# Block on every Deployment/StatefulSet in runai-backend reaching Ready.
+log "Waiting for control plane rollout to complete..."
+for r in $(kubectl get deployment,statefulset -n runai-backend -o name); do
+  kubectl rollout status -n runai-backend "$r" --timeout=10m \
+    || die "Rollout did not complete: $r"
+done
 
 log "Obtaining auth token..."
 token=$(curl -fsS "${curl_flags[@]}" --location \
@@ -86,10 +91,13 @@ if [[ "${http_code}" == "409" ]]; then
     -H "Authorization: Bearer ${token}" \
     -H "accept: application/json" \
     | jq -r ".[] | select(.name==\"${RUNAI_CLUSTER_NAME}\") | .uuid")
-else
+elif [[ "${http_code}" =~ ^2 ]]; then
   uuid=$(echo "${body}" | jq -r .uuid)
+else
+  die "POST /api/v1/clusters returned HTTP ${http_code}: ${body}"
 fi
-[[ -n "${uuid}" && "${uuid}" != "null" ]] || die "Failed to create or find cluster."
+[[ -n "${uuid}" && "${uuid}" != "null" ]] \
+  || die "Cluster UUID empty (http=${http_code}, body=${body})."
 log "Cluster UUID: ${uuid}"
 
 # --- Install cluster ---
