@@ -15,6 +15,33 @@ sudo sed -i 's/^disabled_plugins = \["cri"\]/# disabled_plugins = ["cri"]/' \
 log "Verifying k8s is ready..."
 kubectl wait --for=condition=ready node --all --timeout=60s
 
+# --- GPU support ---
+# Brev's preflight ("Still waiting for GPUs") and Run:AI itself both require
+# nvidia.com/gpu to appear in node Allocatable. microk8s ships a GPU addon that
+# installs the NVIDIA GPU Operator (driver + device plugin). Enable it here.
+log "Enabling microk8s GPU addon..."
+sudo microk8s enable gpu 2>&1 | sed 's/^/  /' \
+  || log "WARN: 'microk8s enable gpu' returned non-zero (may already be enabled)"
+
+log "Waiting for nvidia.com/gpu to appear in node Allocatable (up to 10 min)..."
+gpu_ready=0
+for _ in $(seq 1 60); do
+  if kubectl get nodes -o jsonpath='{.items[*].status.allocatable}' 2>/dev/null \
+     | grep -q "nvidia.com/gpu"; then
+    gpu_ready=1
+    break
+  fi
+  sleep 10
+done
+if [[ "${gpu_ready}" -eq 1 ]]; then
+  log "GPU allocatable on node(s)."
+else
+  echo "WARN: nvidia.com/gpu not allocatable after 10 minutes. Diagnose with:" >&2
+  echo "  kubectl get nodes -o jsonpath='{.items[*].status.allocatable}'" >&2
+  echo "  kubectl get pods -n gpu-operator-resources" >&2
+  echo "  nvidia-smi" >&2
+fi
+
 # --- Helm ---
 log "Installing Helm..."
 command -v helm &>/dev/null || curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
